@@ -1,6 +1,7 @@
 use std::fmt;
 
 use futures::{Async, Poll, Stream};
+use futures::stream::BoxStream;
 use futures::sync::mpsc;
 
 /// Body stream
@@ -11,6 +12,7 @@ pub struct Body<T, E> {
 enum Inner<T, E> {
     Once(Option<T>),
     Stream(mpsc::Receiver<Result<T, E>>),
+    BoxStream(BoxStream<T, E>),
     Empty,
 }
 
@@ -35,6 +37,7 @@ impl<T, E> Stream for Body<T, E> {
     fn poll(&mut self) -> Poll<Option<T>, E> {
         match self.inner {
             Inner::Once(ref mut val) => Ok(Async::Ready(val.take())),
+            Inner::BoxStream(ref mut s) => s.poll(),
             Inner::Stream(ref mut s) => {
                 match s.poll().unwrap() {
                     Async::Ready(None) => Ok(Async::Ready(None)),
@@ -45,6 +48,12 @@ impl<T, E> Stream for Body<T, E> {
             }
             Inner::Empty => Ok(Async::Ready(None)),
         }
+    }
+}
+
+impl<T, E> From<BoxStream<T, E>> for Body<T, E> {
+    fn from(s: BoxStream<T, E>) -> Body<T, E> {
+        Body { inner: Inner::BoxStream(s) }
     }
 }
 
